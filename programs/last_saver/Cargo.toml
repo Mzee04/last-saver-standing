@@ -1,0 +1,27 @@
+[package]
+name = "last_saver"
+version = "0.1.0"
+description = "Last Saver Standing: a no-loss Solana savings game"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "last_saver"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "0.31.1"
+
+[dev-dependencies]
+anchor-lang = "0.31.1"
+solana-program-test = "=2.1.21"
+solana-sdk = "=2.1.21"
+tokio = { version = "1", features = ["macros", "rt"] }

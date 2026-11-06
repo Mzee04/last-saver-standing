@@ -1,0 +1,15 @@
+/target/
+.anchor/
+test-ledger/
+node_modules/
+dist/
+.env
+.env.*
+*-keypair.json
+**/*-keypair.json
+.DS_Store
+*.log
+app/node_modules/
+app/dist/
+coverage/
+.turbo/
