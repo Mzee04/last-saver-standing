@@ -5,6 +5,8 @@ node_modules/
 dist/
 .env
 .env.*
+!.env.example
+!app/.env.example
 *-keypair.json
 **/*-keypair.json
 .DS_Store
