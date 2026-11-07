@@ -9,6 +9,7 @@ import { App } from "./App";
 import "@solana/wallet-adapter-react-ui/styles.css";
 import "./styles.css";
 
+// Default cluster is devnet. The program id lives in chain.ts.
 const rpc = import.meta.env.VITE_SOLANA_RPC ?? clusterApiUrl("devnet");
 const cluster = import.meta.env.VITE_SOLANA_CLUSTER ?? "devnet";
 

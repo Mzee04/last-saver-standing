@@ -92,9 +92,28 @@ There is no admin instruction that withdraws principal.
 52MzPzQgqVGXYZNRAbF1nivLSUh7NQgYAbhEoFE7NUyb
 ```
 
-Devnet only. The program keypair is not in git (`target/deploy/` is ignored). The upgrade authority is the deployer's local Solana wallet and is also not committed.
+Deployed on **devnet** (SBF v2, 407,872 bytes). Upgrade authority is the deploy wallet and is not in git. The program keypair is not in git either (`target/deploy/` is ignored).
 
-**Deployment status:** the SBF v2 binary builds, and the full turbo demo completes on a local `solana-test-validator`. A devnet deploy was not finished here: `solana airdrop` against `https://api.devnet.solana.com` returned rate-limit errors, so there was no SOL to pay rent. Run `scripts/devnet-deploy.sh` from a wallet that already has devnet SOL. Do not treat the program id as live on devnet until that command prints `Deployed`.
+- [Program on Solana Explorer (devnet)](https://explorer.solana.com/address/52MzPzQgqVGXYZNRAbF1nivLSUh7NQgYAbhEoFE7NUyb?cluster=devnet)
+- [Deploy transaction](https://explorer.solana.com/tx/NDzh7xG67CfwfDGsbQ3kRn2WSa9AwyndxEdJ2ANDNku1V8X9GgWwfAhnHNcVd6YNHfwHwmZcXL5GqKzjEpTkNTz?cluster=devnet)
+- Program data account: [`956PxoM3MGfqA5jJoooDbiaYa8SaHTva8w6y7HaZbRuB`](https://explorer.solana.com/address/956PxoM3MGfqA5jJoooDbiaYa8SaHTva8w6y7HaZbRuB?cluster=devnet)
+
+### Devnet smoke test
+
+A two-wallet demo round (0.01 SOL entry, 0.01 SOL sponsor bonus, one 8-second window, demo slot-hash mode) was run against this deployment. Both players checked in, the round settled with 2 winners, each claimed 0.005 SOL, and both principal withdrawals succeeded. Bob’s wallet increased by exactly 0.010000 SOL. Mock yield on that short round was 0 lamports. Round account: [`D58RzD5Kt3ZxH2JgCAjT2L5RuawSwjrFUmMDy4XNYNPG`](https://explorer.solana.com/address/D58RzD5Kt3ZxH2JgCAjT2L5RuawSwjrFUmMDy4XNYNPG?cluster=devnet).
+
+| Step | Transaction |
+| --- | --- |
+| Initialize arena | [5K5FXg…](https://explorer.solana.com/tx/5K5FXgFyth1TVqXKUCoFh4SS6VSvqo8mkeWnefucUEdt8QHbwMJNaAJgQnBUQ5Jc6KJk8oVmKKkDqNrir5ZUiYK3?cluster=devnet) |
+| Fund reserve (0.02 SOL) | [R7zetE…](https://explorer.solana.com/tx/R7zetEDLW1yTLbELyy1xu7MbeHXBBjAkS1M75qZaLM9kC8KRzTvakwmZGb7egRhbeCTj7NQPzLMj6s5qsP9z2hi?cluster=devnet) |
+| Create round 0 | [3vDrTE…](https://explorer.solana.com/tx/3vDrTEcyNH9AJwVqTLwLQHUZkFjT9v112FyPUET8mQBZsywTLEGkSK2NMobE8CHCNGvWNM6GJCcRxBTtrQquPtkf?cluster=devnet) |
+| Join, wallet A | [3n8ARe…](https://explorer.solana.com/tx/3n8AResyfouAvvrGKbyAQ1wc4dwF51MWGj5a5hJMsdT1A2rFpRZG5ZsRBNcgJTb4fUAmsUpZCTeZXLohAvookCwf?cluster=devnet) |
+| Join, wallet B | [iqgrJQ…](https://explorer.solana.com/tx/iqgrJQrRuUAMgxUnVY9mUzmfGtZqmH6bGceGkd4uFNA1W3vQCbb17H3PUVqr53GF8PH3TiSqKEMcvsgbawiotr6?cluster=devnet) |
+| Check in A | [5WV9pW…](https://explorer.solana.com/tx/5WV9pWWy8SMt18vf5npEFVB37CcjR9EjWgiSoCDedzkcpLtmfQChPjufibh7RC1PPehUxYFSigriTHHXgTYxPAVj?cluster=devnet) |
+| Check in B | [JRH6kX…](https://explorer.solana.com/tx/JRH6kXpMxZNnmjGB4z48bM3sH3VG3eL366XYb6RQtcggMgigoGnFwVoR6nzpvaSFB8baNW1q6VavWxJ1X8hFNM2?cluster=devnet) |
+| Settle | [3aifZ7…](https://explorer.solana.com/tx/3aifZ7iB3MqtwhoyVPQ33Qe4AmcNjmHiJUpprhGdx8ZuMvMRQg3howCxYaqRuTeJLwLmMfrBf1cEbGZUFr3jeCjH?cluster=devnet) |
+| Withdraw A | [2b1Uex…](https://explorer.solana.com/tx/2b1UexHxznCRwTPvxUntJsYQCgkfrt9hP9kFjVmdJBPCysEtdvoNZNGQXLutAYdiJVNb7QCsraK5WSvmMxYwJvQz?cluster=devnet) |
+| Withdraw B | [4XKyuB…](https://explorer.solana.com/tx/4XKyuBqMmsSTEShABxHUW45QX73bcttkFVs4MH1NamroSrtGGYW3GMJQrvpSWJso5wSj1pQhr8Qa8x4LAvZ3zdPx?cluster=devnet) |
 
 ## Run the tests
 
@@ -114,7 +133,7 @@ npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. Default cluster is devnet (`https://api.devnet.solana.com`). For a local validator:
+Open http://127.0.0.1:5173. The default RPC is devnet (`https://api.devnet.solana.com`) and the default program id is the deployment above. For a local validator:
 
 ```bash
 VITE_SOLANA_RPC=http://127.0.0.1:8899 VITE_SOLANA_CLUSTER=localnet npm run dev
@@ -150,15 +169,35 @@ cd app && RPC=http://127.0.0.1:8899 npm run demo
 
 ## Deploy to devnet
 
+Already deployed. To redeploy from a funded devnet wallet, with Agave 4.4+ on `PATH` so `cargo build-sbf --arch v2` exists:
+
 ```bash
-sh -c "$(curl -sSfL https://release.anza.xyz/v2.1.21/install)"
-# Anchor 0.31.1 binary, or: avm install 0.31.1
-solana config set --url devnet
-chmod +x scripts/devnet-deploy.sh
+solana config set --url https://api.devnet.solana.com
 ./scripts/devnet-deploy.sh
 ```
 
-The script refuses a mainnet RPC. Devnet airdrops are often rate limited; if the balance stays 0, fund the wallet from https://faucet.solana.com and rerun the `solana program deploy` line the script prints via its failure. Do not point this at mainnet and do not use real funds.
+The script refuses a mainnet RPC. The public `requestAirdrop` faucet on `api.devnet.solana.com` is closed (`410`); use https://faucet.solana.com if you need more devnet SOL. Do not point this at mainnet and do not use real funds.
+
+If a deploy stops midway, recover the buffer instead of leaving it funded:
+
+```bash
+solana program show --buffers --url https://api.devnet.solana.com
+solana program close --buffers --url https://api.devnet.solana.com
+```
+
+## Hosting the frontend
+
+The app is a static Vite build and can be hosted for free. GitHub Pages is the straightforward option. This repo does **not** enable Pages and does not change repository settings.
+
+`.github/workflows/frontend.yml` builds `app/` when you start it by hand (Actions → Build frontend → Run workflow) and uploads `app/dist` as an artifact. It does not publish the site.
+
+To turn that into GitHub Pages later, you do it yourself:
+
+1. In `app/vite.config.ts`, set `base: "/last-saver-standing/"` so asset URLs match a project site.
+2. Repository **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+3. Add a second job that uses `actions/deploy-pages` with `permissions: { pages: write, id-token: write }`. Until that setting is on, a deploy job fails, so it is not in this branch.
+
+Any other static host works the same way: `cd app && npm ci && npm run build` and serve `app/dist`. The default RPC and program id are already devnet.
 
 ## Honest limitations
 
@@ -179,4 +218,5 @@ programs/last_saver/   Anchor program and program-test suite
 app/                   Vite + React wallet UI and turbo-demo.ts
 scripts/demo-local.sh  local validator + demo
 scripts/devnet-deploy.sh
+.github/workflows/frontend.yml  manual frontend build, no Pages deploy
 ```

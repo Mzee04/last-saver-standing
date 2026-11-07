@@ -1,0 +1,30 @@
+# Builds the static frontend on demand and stores app/dist as an Actions artifact.
+# This does not enable GitHub Pages and does not deploy anywhere.
+# See README "Hosting the frontend" before adding a Pages deploy job.
+name: Build frontend
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - working-directory: app
+        run: npm ci
+      - working-directory: app
+        run: npm run build
+        env:
+          VITE_SOLANA_RPC: https://api.devnet.solana.com
+          VITE_SOLANA_CLUSTER: devnet
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend
+          path: app/dist
+          if-no-files-found: error
