@@ -14,6 +14,7 @@ import {
   drawDemoWindow,
   drawOraoWindow,
   finalizeWindow,
+  revealDemo,
   formatSol,
   fundReserve,
   gapFromRandomness,
@@ -24,6 +25,7 @@ import {
   loadPlayer,
   loadRound,
   mustResolve,
+  reservePda,
   refundStalled,
   resolveAbsence,
   sabotage,
@@ -37,11 +39,37 @@ import {
 } from "./chain";
 
 const ROUND_KEY = "lss.roundId";
+const PRACTICE_KEY = "lss.practice";
+const NAMES_KEY = "lss.names";
+
+function readStoredPractice(): Keypair | null {
+  try {
+    const raw = sessionStorage.getItem(PRACTICE_KEY);
+    if (!raw) return null;
+    return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(raw) as number[]));
+  } catch {
+    return null;
+  }
+}
+
+function rememberPractice(keypair: Keypair) {
+  sessionStorage.setItem(PRACTICE_KEY, JSON.stringify(Array.from(keypair.secretKey)));
+}
+
+function displayName(user: string) {
+  try {
+    const names = JSON.parse(sessionStorage.getItem(NAMES_KEY) || "{}") as Record<string, string>;
+    if (names[user]) return names[user];
+  } catch {
+    /* unnamed wallet */
+  }
+  return shortKey(user);
+}
 
 export function App({ endpoint, cluster }: { endpoint: string; cluster: string }) {
   const { connection } = useConnection();
   const wallet = useWallet();
-  const [practice, setPractice] = useState<Keypair | null>(null);
+  const [practice, setPractice] = useState<Keypair | null>(() => readStoredPractice());
   const [config, setConfig] = useState<ConfigView | null>(null);
   const [roundId, setRoundId] = useState(() => Number(localStorage.getItem(ROUND_KEY) ?? "0"));
   const [round, setRound] = useState<RoundView | null>(null);
@@ -53,6 +81,7 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
   const [target, setTarget] = useState<string | null>(null);
   const [mode, setMode] = useState<"demoSlot" | "orao">("demoSlot");
   const [bonusSol, setBonusSol] = useState("0.05");
+  const [reserveLamports, setReserveLamports] = useState<number | null>(null);
 
   const signer = useMemo<WalletSigner | null>(() => {
     if (practice) return keypairSigner(practice);
@@ -63,6 +92,11 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
   }, [practice, wallet.publicKey, wallet.signTransaction]);
 
   const refresh = useCallback(async () => {
+    try {
+      setReserveLamports(await connection.getBalance(reservePda()));
+    } catch {
+      /* keep the last reserve figure if this poll is rate-limited */
+    }
     const nextConfig = await loadConfig(connection);
     setConfig(nextConfig);
     if (!nextConfig || nextConfig.nextRoundId === 0) {
@@ -70,7 +104,8 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
       setRoster([]);
       return;
     }
-    const id = Math.min(roundId, nextConfig.nextRoundId - 1);
+    const preferred = Number(localStorage.getItem(ROUND_KEY) ?? String(roundId));
+    const id = Math.min(preferred, nextConfig.nextRoundId - 1);
     const nextRound = await loadRound(connection, id);
     setRound(nextRound);
     if (!nextRound) {
@@ -85,16 +120,20 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
   }, [connection, roundId]);
 
   useEffect(() => {
-    refresh().catch((reason: unknown) => setError(messageOf(reason)));
+    refresh().catch(() => undefined);
   }, [refresh]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(Math.floor(Date.now() / 1000));
-      refresh().catch(() => undefined);
-    }, round?.status === "open" ? 1000 : 4000);
+    const timer = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
     return () => window.clearInterval(timer);
-  }, [refresh, round?.status]);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      refresh().catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
 
   useEffect(() => {
     localStorage.setItem(ROUND_KEY, String(roundId));
@@ -129,15 +168,16 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
         maxPlayers: 8,
         minPlayers: 2,
         windows: 2,
-        windowDuration: 15,
+        windowDuration: 30,
         minGap: 4,
-        maxGap: 10,
+        maxGap: 4,
         stallTimeout: 180,
         joinUntil: chainNow + 180,
         mode,
       });
+      localStorage.setItem(ROUND_KEY, String(id));
       setRoundId(id);
-    }, `Round ${id} is open. Two short windows, so a full round fits in a two-minute demo.`);
+    }, `Round ${id} is open. Thirty-second windows and a four-second gap. Demo randomness (not VRF).`);
   }
 
   const phase = describe(round, me, now);
@@ -161,8 +201,17 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
         </div>
         <div className="wallet-row">
           <WalletMultiButton />
-          <button className="ghost" onClick={() => setPractice(Keypair.generate())} type="button">
-            {practice ? shortKey(practice.publicKey.toBase58()) : "Practice key"}
+          <button
+            className="ghost"
+            data-testid="practice-key"
+            onClick={() => {
+              const next = Keypair.generate();
+              rememberPractice(next);
+              setPractice(next);
+            }}
+            type="button"
+          >
+            {practice ? displayName(practice.publicKey.toBase58()) : "Practice key"}
           </button>
           {practice && (
             <button
@@ -193,7 +242,7 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
           </p>
         </div>
         <div>
-          <span className="tag">Simulated yield</span>
+          <span className="tag">Mock yield / sponsor reserve</span>
           <strong>The prize is sponsor money, labelled as mock yield.</strong>
           <p>
             A published {config ? (config.annualYieldBps / 100).toFixed(2) : "5.00"}% APY is quoted
@@ -218,7 +267,10 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
 
       {config && signer && (
         <section className="card" style={{ marginBottom: 18 }}>
-          <h2>Host a turbo round</h2>
+          <h2>Host a demo round</h2>
+          <p className="ok-note" data-testid="reserve-balance">
+            Sponsor reserve {reserveLamports === null ? "…" : formatSol(reserveLamports)} SOL. Mock yield / sponsor reserve — not interest from a lending protocol.
+          </p>
           <div className="form">
             <label>
               Randomness
@@ -233,11 +285,12 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
             </label>
           </div>
           <div className="actions" style={{ marginTop: 10 }}>
-            <button className="btn" disabled={busy} type="button" onClick={hostTurbo}>
-              Create 15-second windows
+            <button className="btn" data-testid="create-round" disabled={busy} type="button" onClick={hostTurbo}>
+              Create demo round
             </button>
             <button
               className="ghost"
+              data-testid="fund-reserve"
               disabled={busy}
               type="button"
               onClick={() =>
@@ -276,7 +329,15 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
                 <div>
                   <h2>{phase.title}</h2>
                   <p className="muted">{phase.detail}</p>
+                  {round.mode === "demoSlot" && (
+                    <p className="ok-note" data-testid="randomness-label">
+                      Demo randomness (not VRF)
+                    </p>
+                  )}
                   <p className="ok-note">{randomnessCopy(round, verifiedGap)}</p>
+                  <p className="ok-note">
+                    Principal locked in the vault: {formatSol(round.principal)} SOL. Prize SOL is separate.
+                  </p>
                 </div>
               </div>
               <div className="stats">
@@ -312,18 +373,19 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
               {signer && (
                 <div className="actions">
                   {round.status === "forming" && !me && (
-                    <button className="btn big" disabled={busy} type="button" onClick={() => run(() => joinRound(connection, signer, round.id), "You're in. Deposit locked until the round ends.")}>
+                    <button className="btn big" data-testid="join" disabled={busy} type="button" onClick={() => run(() => joinRound(connection, signer, round.id), "You're in. Deposit locked until the round ends.")}>
                       Join · {formatSol(round.entry)} SOL
                     </button>
                   )}
                   {round.status === "forming" && round.playerCount >= round.minPlayers && (
-                    <button className="ghost" disabled={busy} type="button" onClick={() => run(() => startRound(connection, signer, round.id), "Round started. Draw the first window.")}>
+                    <button className="ghost" data-testid="start-round" disabled={busy} type="button" onClick={() => run(() => startRound(connection, signer, round.id), "Round started. Draw the first window.")}>
                       Start round
                     </button>
                   )}
                   {round.status === "needCommit" && (
                     <button
                       className="btn big"
+                      data-testid="draw-window"
                       disabled={busy}
                       type="button"
                       onClick={() =>
@@ -340,12 +402,12 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
                     </button>
                   )}
                   {round.status === "committed" && round.mode === "demoSlot" && (
-                    <button className="ghost" disabled={busy} type="button" onClick={() => run(() => drawDemoWindow(connection, signer, round.id), "Tried the reveal again.")}>
+                    <button className="ghost" data-testid="reveal-window" disabled={busy} type="button" onClick={() => run(() => revealDemo(connection, signer, round.id), "Window revealed from the committed slot hash.")}>
                       Reveal when the slot hash lands
                     </button>
                   )}
                   {me && phase.canCheckIn && (
-                    <button className="btn big pulse" disabled={busy} type="button" onClick={() => run(() => checkIn(connection, signer, round.id), "Checked in. You keep your shield charge.")}>
+                    <button className="btn big pulse" data-testid="check-in" disabled={busy} type="button" onClick={() => run(() => checkIn(connection, signer, round.id), "Checked in. You keep your shield charge.")}>
                       Check in
                     </button>
                   )}
@@ -355,20 +417,25 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
                     </button>
                   )}
                   {me && phase.canJolt && target && (
-                    <button className="danger" disabled={busy} type="button" onClick={() => run(() => sabotage(connection, signer, round.id, new PublicKey(target)), "Jolt sent. They owe one extra check-in of the same length.")}>
-                      Jolt {shortKey(target)}
+                    <button className="danger" data-testid="jolt" disabled={busy} type="button" onClick={() => run(() => sabotage(connection, signer, round.id, new PublicKey(target)), "Jolt sent. They owe one extra check-in of the same length.")}>
+                      Jolt {displayName(target)}
                     </button>
                   )}
                   {round.status === "open" && now >= round.closeAt && (
                     <button
                       className="btn"
+                      data-testid="resolve"
                       disabled={busy}
                       type="button"
                       onClick={() =>
                         run(async () => {
                           for (const player of roster) {
-                            if (mustResolve(round, player, Math.floor(Date.now() / 1000))) {
+                            if (!mustResolve(round, player, Math.floor(Date.now() / 1000))) continue;
+                            try {
                               await resolveAbsence(connection, signer, round.id, new PublicKey(player.user));
+                            } catch (error) {
+                              const text = messageOf(error);
+                              if (!/Already|Eliminated|NotRequired/.test(text)) throw error;
                             }
                           }
                           await finalizeWindow(connection, signer, round.id);
@@ -379,12 +446,12 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
                     </button>
                   )}
                   {(round.status === "settled" || round.status === "cancelled") && me && !me.withdrawn && (
-                    <button className="btn big" disabled={busy} type="button" onClick={() => run(() => withdrawPrincipal(connection, signer, round.id, signer.publicKey), "Deposit returned in full.")}>
+                    <button className="btn big" data-testid="withdraw" disabled={busy} type="button" onClick={() => run(() => withdrawPrincipal(connection, signer, round.id, signer.publicKey), "Deposit returned in full.")}>
                       Withdraw deposit
                     </button>
                   )}
                   {round.status === "settled" && me?.alive && !me.claimed && round.prizePerWinner > 0 && (
-                    <button className="ghost" disabled={busy} type="button" onClick={() => run(() => claimPrize(connection, signer, round.id, signer.publicKey), "Prize claimed from the sponsor reserve.")}>
+                    <button className="ghost" data-testid="claim" disabled={busy} type="button" onClick={() => run(() => claimPrize(connection, signer, round.id, signer.publicKey), "Prize claimed from the sponsor reserve.")}>
                       Claim {formatSol(round.prizePerWinner)} SOL
                     </button>
                   )}
@@ -399,8 +466,16 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
           ) : (
             <p className="muted">No round at this id yet.</p>
           )}
-          {note && <p className="ok-note">{note}</p>}
-          {error && <div className="toast">{error}</div>}
+          {note && (
+            <p className="ok-note" data-testid="status-note">
+              {note}
+            </p>
+          )}
+          {error && (
+            <div className="toast" data-testid="error-toast">
+              {error}
+            </div>
+          )}
         </section>
 
         <aside>
@@ -411,12 +486,14 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
                 <button
                   key={player.user}
                   type="button"
+                  data-testid="player"
+                  data-user={player.user}
                   className={`person ${player.alive ? "" : "out"} ${target === player.user ? "picked" : ""}`}
                   onClick={() => setTarget(player.user)}
                 >
                   <div>
                     <div className="name">
-                      {shortKey(player.user)}
+                      {displayName(player.user)}
                       {player.user === signer?.publicKey.toBase58() ? " · you" : ""}
                     </div>
                     <div className="chips">
@@ -425,6 +502,9 @@ export function App({ endpoint, cluster }: { endpoint: string; cluster: string }
                       </span>
                       <span className="chip">Shield {player.shield}</span>
                       <span className="chip">Jolt {player.sabotage}</span>
+                      {round && player.shieldArmedFor === round.windowId && player.shieldArmedFor > 0 && (
+                        <span className="chip warn">Shield armed</span>
+                      )}
                       {player.joltPending && <span className="chip warn">Jolted</span>}
                       {player.withdrawn && <span className="chip">Deposit back</span>}
                     </div>

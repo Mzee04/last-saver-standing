@@ -11,6 +11,7 @@ import "./styles.css";
 
 // Default cluster is devnet. The program id lives in chain.ts.
 const rpc = import.meta.env.VITE_SOLANA_RPC ?? clusterApiUrl("devnet");
+const rpcLabel = import.meta.env.VITE_SOLANA_RPC_LABEL ?? rpc;
 const cluster = import.meta.env.VITE_SOLANA_CLUSTER ?? "devnet";
 
 function Root() {
@@ -36,7 +37,7 @@ function Root() {
     <Providers endpoint={rpc}>
       <Wallets wallets={wallets} autoConnect>
         <Modal>
-          <App endpoint={rpc} cluster={cluster} />
+          <App endpoint={rpcLabel} cluster={cluster} />
         </Modal>
       </Wallets>
     </Providers>

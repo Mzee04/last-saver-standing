@@ -231,24 +231,61 @@ export async function send(
   instructions: TransactionInstruction[],
   commitment: Commitment = "confirmed",
 ) {
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash(commitment);
+  let blockhash = "";
+  let lastValidBlockHeight = 0;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      const latest = await connection.getLatestBlockhash(commitment);
+      blockhash = latest.blockhash;
+      lastValidBlockHeight = latest.lastValidBlockHeight;
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt === 5 || !message.includes("429")) throw error;
+      await sleep(1000 * (attempt + 1));
+    }
+  }
   const tx = new Transaction({
     feePayer: signer.publicKey,
     blockhash,
     lastValidBlockHeight,
   }).add(...instructions);
   const signed = await signer.signTransaction(tx);
-  try {
-    const signature = await connection.sendRawTransaction(signed.serialize(), {
-      skipPreflight: false,
-    });
-    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, commitment);
-    return signature;
-  } catch (error) {
-    const logs = extractLogs(error);
-    const anchor = logs.find((line) => line.includes("Error Message:"));
-    throw new TxFailed(anchor ?? (error instanceof Error ? error.message : "Transaction failed"), logs);
+  let signature = "";
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: true,
+        maxRetries: 3,
+      });
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt === 5 || (!message.includes("429") && !message.includes("Too Many"))) {
+        throw new TxFailed(message, extractLogs(error));
+      }
+      await sleep(1500 * (attempt + 1));
+    }
   }
+  const started = Date.now();
+  while (Date.now() - started < 90000) {
+    try {
+      const status = await connection.getSignatureStatuses([signature]);
+      const value = status.value[0];
+      if (value?.err) {
+        throw new TxFailed(`Transaction ${signature} failed: ${JSON.stringify(value.err)}`);
+      }
+      if (value?.confirmationStatus === "confirmed" || value?.confirmationStatus === "finalized") {
+        return signature;
+      }
+    } catch (error) {
+      if (error instanceof TxFailed) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("429") && !message.includes("Too Many")) throw error;
+    }
+    await sleep(1500);
+  }
+  throw new TxFailed(`Timed out waiting for ${signature}`);
 }
 
 export async function initialize(connection: Connection, signer: WalletSigner, annualYieldBps = 500) {
@@ -314,6 +351,15 @@ export async function joinRound(connection: Connection, signer: WalletSigner, id
   ]);
 }
 
+export async function cancelRound(connection: Connection, signer: WalletSigner, id: number) {
+  return send(connection, signer, [
+    ix("cancel_round", Buffer.alloc(0), [
+      signerMeta(signer.publicKey, true),
+      meta(roundPda(id), true),
+    ]),
+  ]);
+}
+
 export async function startRound(connection: Connection, signer: WalletSigner, id: number) {
   return send(connection, signer, [
     ix("start_round", Buffer.alloc(0), [
@@ -349,7 +395,7 @@ export async function drawDemoWindow(connection: Connection, signer: WalletSigne
   await commitDemo(connection, signer, id, seed);
   const committed = await loadRound(connection, id);
   if (!committed) throw new Error("Round disappeared after commit");
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 30_000;
   let revealed = false;
   while (Date.now() < deadline) {
     const slot = await connection.getSlot("confirmed");
@@ -359,10 +405,11 @@ export async function drawDemoWindow(connection: Connection, signer: WalletSigne
         revealed = true;
         break;
       } catch (error) {
-        if (!(error instanceof TxFailed) || !error.message.includes("Slot hash")) throw error;
+        const message = error instanceof Error ? error.message : "";
+        if (!message.includes("Slot hash") && !message.includes("6014")) throw error;
       }
     }
-    await sleep(400);
+    await sleep(800);
   }
   if (!revealed) throw new Error("Slot hash was not ready in time. Try Reveal again.");
   return seed;

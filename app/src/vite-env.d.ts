@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_SOLANA_RPC?: string;
+  readonly VITE_SOLANA_RPC_LABEL?: string;
   readonly VITE_SOLANA_CLUSTER?: string;
 }
 
